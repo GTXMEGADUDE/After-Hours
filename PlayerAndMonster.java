@@ -17,6 +17,7 @@ class Player {
     private boolean isHiding = false;
     private int hideCooldown = 0;
     private SoundManager soundManager;
+    private int hideCount = 0;
     
     public Player(int startX, int groundHeight, SoundManager soundManager) {
         this.soundManager = soundManager;
@@ -106,6 +107,7 @@ private void handleLockerInteraction(ArrayList<Locker> lockers) {
         for (Locker locker : lockers) {
             if (getBounds().intersects(locker.getBounds())) {
                 isHiding = true;
+                hideCount++; // Track hide count for scoring
                 if (soundManager != null) {
                     soundManager.playLockerSound();
                 }
@@ -150,6 +152,7 @@ private void handleLockerInteraction(ArrayList<Locker> lockers) {
     public int getX() { return x; }
     public int getY() { return y; }
     public boolean isHiding() { return isHiding; }
+    public int getHideCount() { return hideCount; }
     
     // Setters for classroom positioning
     public void setPosition(int x, int y) {

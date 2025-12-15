@@ -17,6 +17,8 @@ class ItemManager {
     private ArrayList<ArrayList<Obstacle>> floorObstacles;
     private ArrayList<ArrayList<Classroom>> floorClassrooms;
     private ArrayList<ArrayList<Locker>> classroomLockers;
+    private ArrayList<ArrayList<GameEntity>> classroomNotes;
+    private ArrayList<GameEntity> classroomKeys;
     private BufferedImage noteImage;
     private BufferedImage keyImage;
     private BufferedImage exitImage;
@@ -64,6 +66,8 @@ class ItemManager {
         floorObstacles = new ArrayList<>();
         floorClassrooms = new ArrayList<>();
         classroomLockers = new ArrayList<>();
+        classroomNotes = new ArrayList<>();
+        classroomKeys = new ArrayList<>();
         
         for (int i = 0; i < 3; i++) {
             floorNotes.add(new ArrayList<>());
@@ -72,6 +76,8 @@ class ItemManager {
             floorObstacles.add(new ArrayList<>());
             floorClassrooms.add(new ArrayList<>());
             classroomLockers.add(new ArrayList<>());
+            classroomNotes.add(new ArrayList<>());
+            classroomKeys.add(null);
         }
         
         exit = new GameEntity(exitImage, 500, groundHeight - exitImage.getHeight());
@@ -89,15 +95,14 @@ class ItemManager {
         floorObstacles.get(floor).clear();
         floorClassrooms.get(floor).clear();
         classroomLockers.get(floor).clear();
+        classroomNotes.get(floor).clear();
+        classroomKeys.set(floor, null);
         
-        int noteX = 300 + random.nextInt(worldWidth - 600);
-        floorNotes.get(floor).add(new GameEntity(noteImage, noteX, groundHeight - noteImage.getHeight() - 20));
+        // Generate notes - some in main world, some in classrooms
+        generateNotes(floor, groundHeight, random);
         
-        if (floor == 1) {
-            int keyX = 300 + random.nextInt(worldWidth - 600);
-            floorKeys.set(floor, new GameEntity(keyImage, keyX, groundHeight - keyImage.getHeight() - 20));
-            floorKeys.get(floor).active = true;
-        }
+        // Generate key - can be in main world or classroom
+        generateKey(floor, groundHeight, random);
         
         int lockersInMainWorld = 1 + random.nextInt(2);
         int lockersInClassrooms = 3 - lockersInMainWorld;
@@ -111,47 +116,46 @@ class ItemManager {
             }
         }
         
-        if (random.nextInt(100) < 60) {
-            int obstacleCount = 1 + random.nextInt(2);
-            for (int i = 0; i < obstacleCount; i++) {
-                generateObstacleWithClassroom(floor, groundHeight, random);
+        // Generate classrooms with optional obstacles
+        if (random.nextInt(100) < 80) { // 80% chance to spawn at least one classroom
+            int classroomCount = 1 + random.nextInt(2);
+            for (int i = 0; i < classroomCount; i++) {
+                generateClassroom(floor, groundHeight, random);
             }
         }
         
-if (lockersInClassrooms > 0 && !floorClassrooms.get(floor).isEmpty()) {
-    int lockersPlacedInClassrooms = 0;
-    int maxAttemptsPerClassroom = 30;
-    int totalAttempts = 0;
-    
-    // Try to distribute lockers evenly across available classrooms
-    ArrayList<Classroom> availableClassrooms = new ArrayList<>(floorClassrooms.get(floor));
-    
-    while (lockersPlacedInClassrooms < lockersInClassrooms && totalAttempts < 100 && !availableClassrooms.isEmpty()) {
-        // Pick a random classroom from available ones
-        Classroom classroom = availableClassrooms.get(random.nextInt(availableClassrooms.size()));
-        
-        Locker locker = createClassroomLocker(classroom, random, floor);
-        if (locker != null) {
-            classroomLockers.get(floor).add(locker);
-            lockersPlacedInClassrooms++;
-            totalAttempts = 0; // Reset counter on success
+        if (lockersInClassrooms > 0 && !floorClassrooms.get(floor).isEmpty()) {
+            int lockersPlacedInClassrooms = 0;
+            int maxAttemptsPerClassroom = 30;
+            int totalAttempts = 0;
             
-            // If this classroom is getting too crowded, remove it from available list
-            if (countLockersInClassroom(classroom, floor) >= 2) {
-                availableClassrooms.remove(classroom);
-            }
-        } else {
-            totalAttempts++;
-            // If we can't place in this classroom after several attempts, try another one
-            if (totalAttempts > maxAttemptsPerClassroom) {
-                availableClassrooms.remove(classroom);
-                totalAttempts = 0;
+            // Try to distribute lockers evenly across available classrooms
+            ArrayList<Classroom> availableClassrooms = new ArrayList<>(floorClassrooms.get(floor));
+            
+            while (lockersPlacedInClassrooms < lockersInClassrooms && totalAttempts < 100 && !availableClassrooms.isEmpty()) {
+                // Pick a random classroom from available ones
+                Classroom classroom = availableClassrooms.get(random.nextInt(availableClassrooms.size()));
+                
+                Locker locker = createClassroomLocker(classroom, random, floor);
+                if (locker != null) {
+                    classroomLockers.get(floor).add(locker);
+                    lockersPlacedInClassrooms++;
+                    totalAttempts = 0; // Reset counter on success
+                    
+                    // If this classroom is getting too crowded, remove it from available list
+                    if (countLockersInClassroom(classroom, floor) >= 2) {
+                        availableClassrooms.remove(classroom);
+                    }
+                } else {
+                    totalAttempts++;
+                    // If we can't place in this classroom after several attempts, try another one
+                    if (totalAttempts > maxAttemptsPerClassroom) {
+                        availableClassrooms.remove(classroom);
+                        totalAttempts = 0;
+                    }
+                }
             }
         }
-    }
-}
-
-
         
         int totalLockers = floorLockers.get(floor).size() + classroomLockers.get(floor).size();
         while (totalLockers < 3) {
@@ -164,8 +168,106 @@ if (lockersInClassrooms > 0 && !floorClassrooms.get(floor).isEmpty()) {
             }
         }
     }
-
     
+    private void generateNotes(int floor, int groundHeight, java.util.Random random) {
+        int totalNotes = 1; // One note per floor
+        boolean placeInClassroom = random.nextBoolean(); // 50% chance to place note in classroom
+        
+        if (placeInClassroom && !floorClassrooms.get(floor).isEmpty()) {
+            // Place note in a random classroom
+            Classroom classroom = floorClassrooms.get(floor).get(random.nextInt(floorClassrooms.get(floor).size()));
+            int noteX = 300 + random.nextInt(1320); // Within classroom bounds
+            int noteY = classroom.getClassroomGroundY() - noteImage.getHeight() - 20;
+            classroomNotes.get(floor).add(new GameEntity(noteImage, noteX, noteY));
+        } else {
+            // Place note in main world
+            int noteX = 300 + random.nextInt(worldWidth - 600);
+            floorNotes.get(floor).add(new GameEntity(noteImage, noteX, groundHeight - noteImage.getHeight() - 20));
+        }
+    }
+    
+    private void generateKey(int floor, int groundHeight, java.util.Random random) {
+        if (floor == 1) { // Key only spawns on floor 1
+            boolean placeInClassroom = random.nextBoolean(); // 50% chance to place key in classroom
+            
+            if (placeInClassroom && !floorClassrooms.get(floor).isEmpty()) {
+                // Place key in a random classroom
+                Classroom classroom = floorClassrooms.get(floor).get(random.nextInt(floorClassrooms.get(floor).size()));
+                int keyX = 300 + random.nextInt(1320); // Within classroom bounds
+                int keyY = classroom.getClassroomGroundY() - keyImage.getHeight() - 20;
+                classroomKeys.set(floor, new GameEntity(keyImage, keyX, keyY));
+                classroomKeys.get(floor).active = true;
+            } else {
+                // Place key in main world
+                int keyX = 300 + random.nextInt(worldWidth - 600);
+                floorKeys.set(floor, new GameEntity(keyImage, keyX, groundHeight - keyImage.getHeight() - 20));
+                floorKeys.get(floor).active = true;
+            }
+        }
+    }
+    
+    private void generateClassroom(int floor, int groundHeight, java.util.Random random) {
+        int attempts = 0;
+        boolean validPosition = false;
+        int entranceX = 0, exitX = 0;
+        
+        while (attempts < 200 && !validPosition) {
+            // Decide if this classroom will have an obstacle (60% chance)
+            boolean hasObstacle = random.nextInt(100) < 60;
+            int obstacleX = 0;
+            
+            if (hasObstacle) {
+                // Pick a random position for the obstacle
+                obstacleX = obstacleImage.getWidth() + 300 + random.nextInt(worldWidth - (obstacleImage.getWidth() * 2) - 600);
+                
+                // CALCULATE DOOR POSITIONS USING ACTUAL IMAGE WIDTHS
+                entranceX = obstacleX - doorEntranceImage.getWidth() - 200; // LEFT DOOR - 200px gap
+                exitX = obstacleX + obstacleImage.getWidth() + 80; // RIGHT DOOR - 80px gap
+            } else {
+                // Classroom without obstacle - place doors with random spacing
+                int minDoorSpacing = 600;
+                int maxDoorSpacing = 1200;
+                int doorSpacing = minDoorSpacing + random.nextInt(maxDoorSpacing - minDoorSpacing);
+                
+                entranceX = 300 + random.nextInt(worldWidth - 600 - doorSpacing - doorEntranceImage.getWidth() * 2);
+                exitX = entranceX + doorSpacing;
+            }
+            
+            int doorY = groundHeight - doorEntranceImage.getHeight();
+            
+            // CHECK DOOR POSITIONS
+            boolean entranceValid = isDoorPositionAbsolutelyValid(entranceX, doorY, floor);
+            boolean exitValid = isDoorPositionAbsolutelyValid(exitX, doorY, floor);
+            
+            if (entranceValid && exitValid) {
+                validPosition = true;
+                
+                // CREATE THE CLASSROOM
+                Classroom classroom;
+                if (hasObstacle) {
+                    Obstacle obstacle = new Obstacle(obstacleImage, obstacleX, groundHeight - obstacleImage.getHeight());
+                    classroom = new Classroom(classroomBgImage, classroomGroundImage, 
+                                           doorEntranceImage, doorExitImage, 
+                                           obstacle, 1920, 1080);
+                    floorObstacles.get(floor).add(obstacle);
+                } else {
+                    // Classroom without obstacle
+                    classroom = new Classroom(classroomBgImage, classroomGroundImage, 
+                                           doorEntranceImage, doorExitImage, 
+                                           null, 1920, 1080);
+                }
+                
+                classroom.setEntrancePosition(entranceX, doorY);
+                classroom.setExitPosition(exitX, doorY);
+                
+                floorClassrooms.get(floor).add(classroom);
+                break;
+            }
+            
+            attempts++;
+        }
+    }
+
     
 private Locker createClassroomLocker(Classroom classroom, java.util.Random random, int floor) {
     int attempts = 0;
@@ -234,55 +336,6 @@ private int countLockersInClassroom(Classroom classroom, int floor) {
     return count;
 }
     
-private void generateObstacleWithClassroom(int floor, int groundHeight, java.util.Random random) {
-    int attempts = 0;
-    boolean validPosition = false;
-    int obstacleX = 0;
-    
-    while (attempts < 200 && !validPosition) {
-        // Pick a random position for the obstacle
-        obstacleX = obstacleImage.getWidth() + 300 + random.nextInt(worldWidth - (obstacleImage.getWidth() * 2) - 600);
-        int obstacleY = groundHeight - obstacleImage.getHeight();
-        
-        Obstacle testObstacle = new Obstacle(obstacleImage, obstacleX, obstacleY);
-        
-        // Check if obstacle position is valid
-        if (!isObstaclePositionValid(testObstacle, floor)) {
-            attempts++;
-            continue;
-        }
-        
-        // CALCULATE DOOR POSITIONS USING ACTUAL IMAGE WIDTHS
-int entranceX = obstacleX - doorEntranceImage.getWidth() - 200; // LEFT DOOR - 80px gap
-int exitX = obstacleX + obstacleImage.getWidth() + 80;
-        
-        int doorY = groundHeight - doorEntranceImage.getHeight();
-        
-        // CHECK DOOR POSITIONS
-        boolean entranceValid = isDoorPositionAbsolutelyValid(entranceX, doorY, floor);
-        boolean exitValid = isDoorPositionAbsolutelyValid(exitX, doorY, floor);
-        
-        if (entranceValid && exitValid) {
-            validPosition = true;
-            
-            // CREATE THE FUCKING CLASSROOM
-            Obstacle obstacle = new Obstacle(obstacleImage, obstacleX, obstacleY);
-            Classroom classroom = new Classroom(classroomBgImage, classroomGroundImage, 
-                                               doorEntranceImage, doorExitImage, 
-                                               obstacle, 1920, 1080);
-            
-            classroom.setEntrancePosition(entranceX, doorY);
-            classroom.setExitPosition(exitX, doorY);
-            
-            floorObstacles.get(floor).add(obstacle);
-            floorClassrooms.get(floor).add(classroom);
-            break;
-        }
-        
-        attempts++;
-    }
-}
-
 private boolean isObstaclePositionValid(Obstacle obstacle, int floor) {
     Rectangle obstacleBounds = obstacle.getBounds();
     
@@ -489,6 +542,7 @@ private boolean isDoorPositionAbsolutelyValid(int doorX, int doorY, int floor) {
     
     public void checkPlayerInteractions(Player player) {
         if (activeClassroom == null) {
+            // Check main world items
             ArrayList<GameEntity> currentNotes = floorNotes.get(currentFloor);
             for (int i = 0; i < currentNotes.size(); i++) {
                 if (player.getBounds().intersects(currentNotes.get(i).getBounds())) {
@@ -502,6 +556,22 @@ private boolean isDoorPositionAbsolutelyValid(int doorX, int doorY, int floor) {
             if (!hasKey && currentKey != null && currentKey.active && player.getBounds().intersects(currentKey.getBounds())) {
                 hasKey = true;
                 currentKey.active = false;
+            }
+        } else {
+            // Check classroom items
+            ArrayList<GameEntity> currentClassroomNotes = classroomNotes.get(currentFloor);
+            for (int i = 0; i < currentClassroomNotes.size(); i++) {
+                if (player.getBounds().intersects(currentClassroomNotes.get(i).getBounds())) {
+                    currentClassroomNotes.remove(i);
+                    notesCollected++;
+                    break;
+                }
+            }
+            
+            GameEntity currentClassroomKey = classroomKeys.get(currentFloor);
+            if (!hasKey && currentClassroomKey != null && currentClassroomKey.active && player.getBounds().intersects(currentClassroomKey.getBounds())) {
+                hasKey = true;
+                currentClassroomKey.active = false;
             }
         }
     }
@@ -656,6 +726,16 @@ private boolean tryAlternativeSpawnPositions(Player player, Rectangle testBounds
     public void draw(Graphics g, int cameraX, int screenWidth, int groundHeight) {
         if (activeClassroom != null) {
             activeClassroom.draw(g);
+            
+            // Draw classroom items
+            for (GameEntity note : classroomNotes.get(currentFloor)) {
+                g.drawImage(note.sprite, note.x, note.y, null);
+            }
+            
+            GameEntity currentClassroomKey = classroomKeys.get(currentFloor);
+            if (currentClassroomKey != null && currentClassroomKey.active) {
+                g.drawImage(currentClassroomKey.sprite, currentClassroomKey.x, currentClassroomKey.y, null);
+            }
             
             for (Locker locker : classroomLockers.get(currentFloor)) {
                 g.drawImage(locker.getSprite(), locker.getX(), locker.getY(), null);
@@ -900,4 +980,5 @@ class Classroom {
     public int getClassroomGroundY() { return classroomGroundY; }
     
     public Obstacle getConnectedObstacle() { return connectedObstacle; }
+    public boolean hasObstacle() { return connectedObstacle != null; }
 }
